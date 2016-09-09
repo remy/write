@@ -1,163 +1,212 @@
 /* eslint-env browser */
-/* global CodeMirror, autosize, testForMobile */
-var root = document.documentElement;
-var mobileT = null; // mobile textarea
-var isMobile = testForMobile();
-var textarea = document.querySelector('#codemirror');
+/* global autosize */
+(function (document, window) {
+  var root = document.querySelector('main');
+  var textarea = document.querySelector('textarea');
 
-try { // to restore from local storage
-  const old = localStorage.getItem('write');
-  if (old) {
-    textarea.value = old;
+  var make = tag => document.createElement(tag);
+  var add = (what, to) => to.appendChild(what);
+  var on = (el, event, callback) => el.addEventListener(event, callback);
+
+  try { // to restore from local storage
+    var old = localStorage.getItem('write');
+    if (old) {
+      textarea.value = old;
+    }
+  } catch (e) {}
+
+  on(root, 'keydown', toggleFullScreen);
+  on(root, 'click', function () {
+    editor.focus();
+  });
+
+  function toggleFullScreen(event) {
+    var className = 'fullscreen';
+    if (event.which === 13 && event.metaKey) {
+      if (!isFull().fullscreenElement) {
+        launchIntoFullscreen(this);
+        root.classList.add(className);
+      } else {
+        root.classList.remove(className);
+        exitFullscreen();
+      }
+
+      setTimeout(() => editor.update(), 200);
+    }
   }
-} catch (e) {}
 
-root.addEventListener('keydown', toggleFullScreen);
-root.addEventListener('click', function () {
-  editor.focus();
-  if (mobileT) {
-    mobileT.focus();
+  function isFull() {
+    var fullscreenElement = document.fullscreenElement || document.mozFullScreenElement || document.webkitFullscreenElement;
+    var fullscreenEnabled = document.fullscreenEnabled || document.mozFullScreenEnabled || document.webkitFullscreenEnabled;
+    return {
+      fullscreenElement: fullscreenElement,
+      fullscreenEnabled: fullscreenEnabled,
+    };
   }
-});
 
-window.onresize = () => {
-  editor.refresh();
-}
+  function launchIntoFullscreen(element) {
+    if (element.requestFullscreen) {
+      element.requestFullscreen();
+    } else if (element.mozRequestFullScreen) {
+      element.mozRequestFullScreen();
+    } else if (element.webkitRequestFullscreen) {
+      element.webkitRequestFullscreen();
+    } else if (element.msRequestFullscreen) {
+      element.msRequestFullscreen();
+    }
+  }
 
-function toggleFullScreen(event) {
-  if (event.which === 13 && event.metaKey) {
-    if (!isFull().fullscreenElement) {
-      launchIntoFullscreen(this);
-      root.classList.add('fullscreen');
-    } else {
-      root.classList.remove('fullscreen');
-      exitFullscreen();
+  // Whack fullscreen
+  function exitFullscreen() {
+    if (document.exitFullscreen) {
+      document.exitFullscreen();
+    } else if (document.mozCancelFullScreen) {
+      document.mozCancelFullScreen();
+    } else if (document.webkitExitFullscreen) {
+      document.webkitExitFullscreen();
+    }
+  }
+
+  function save() {
+    const saveData = (function () {
+      const a = make('a');
+      document.body.appendChild(a);
+      a.style = 'display: none';
+      return function (data, fileName) {
+        var blob = new Blob([data], {
+            type: 'octet/stream'
+          }),
+          url = window.URL.createObjectURL(blob);
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        window.URL.revokeObjectURL(url);
+      };
+    }());
+
+    const data = editor.getValue();
+    const lines = data.split('\n').filter(_ => _.trim()).filter(Boolean);
+    const h1 = lines.filter(_ => _.indexOf('# ') === 0).shift();
+    var slug = 'untitled';
+
+    if (h1) {
+      slug = slugify(h1);
+    } else if (lines[0]) {
+      slug = slugify(lines[0]);
     }
 
-    setTimeout(() => editor.refresh(), 200);
-  }
-}
-
-function isFull() {
-  var fullscreenElement = document.fullscreenElement || document.mozFullScreenElement || document.webkitFullscreenElement;
-  var fullscreenEnabled = document.fullscreenEnabled || document.mozFullScreenEnabled || document.webkitFullscreenEnabled;
-  return {
-    fullscreenElement: fullscreenElement,
-    fullscreenEnabled: fullscreenEnabled,
-  };
-}
-
-function launchIntoFullscreen(element) {
-  if (element.requestFullscreen) {
-    element.requestFullscreen();
-  } else if (element.mozRequestFullScreen) {
-    element.mozRequestFullScreen();
-  } else if (element.webkitRequestFullscreen) {
-    element.webkitRequestFullscreen();
-  } else if (element.msRequestFullscreen) {
-    element.msRequestFullscreen();
-  }
-}
-
-// Whack fullscreen
-function exitFullscreen() {
-  if (document.exitFullscreen) {
-    document.exitFullscreen();
-  } else if (document.mozCancelFullScreen) {
-    document.mozCancelFullScreen();
-  } else if (document.webkitExitFullscreen) {
-    document.webkitExitFullscreen();
-  }
-}
-
-CodeMirror.commands.save = function () {
-  const saveData = (function () {
-    const a = document.createElement('a');
-    document.body.appendChild(a);
-    a.style = 'display: none';
-    return function (data, fileName) {
-      var blob = new Blob([data], {
-          type: 'octet/stream'
-        }),
-        url = window.URL.createObjectURL(blob);
-      a.href = url;
-      a.download = fileName;
-      a.click();
-      window.URL.revokeObjectURL(url);
-    };
-  }());
-
-  const data = editor.getValue();
-  const lines = data.split('\n').filter(_ => _.trim()).filter(Boolean);
-  const h1 = lines.filter(_ => _.indexOf('# ') === 0).shift();
-  var slug = 'untitled';
-
-  if (h1) {
-    slug = slugify(h1);
-  } else if (lines[0]) {
-    slug = slugify(lines[0]);
-  }
-
-  saveData(data, slug + '.md');
-};
-
-function slugify(s) {
-  return (s || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[\s-]+/g, '-')
-    .replace(/[^a-z0-9-]/g, '')
-    .replace(/^-+|-+$/g, '')
-    .replace(/[\s-]+/g, '-');
-}
-
-var editor = CodeMirror.fromTextArea(textarea, {
-  mode: 'gfm',
-  lineWrapping: true,
-  autoCloseBrackets: true,
-  readOnly: isMobile ? 'nocursor' : false,
-  extraKeys: {
-    'Enter': 'newlineAndIndentContinueMarkdownList'
-  }
-});
-
-editor.on('change', () => {
-  localStorage.setItem('write', editor.getValue());
-});
-
-editor.focus();
-
-// if we're mobile, we do a bit of magic here: we create a new textarea
-// on top of the codemirror instance, and make the text invisible, so it
-// looks like code mirror works on mobile (when really it doesn't).
-if (isMobile) {
-  const t = document.createElement('textarea');
-  t.setAttribute('autocorrect', 'off');
-  t.setAttribute('autocapitalize', 'off');
-  t.setAttribute('spellcheck', 'false');
-  t.setAttribute('contenteditable', 'false');
-  document.body.appendChild(t);
-  document.body.classList.add('mobile');
-  t.classList.add('CodeMirror');
-  t.value = editor.getValue();
-  autosize(t);
-
-  mobileT = t;
-
-  t.oninput = () => {
-    editor.setValue(t.value);
+    saveData(data, slug + '.md');
   };
 
-//   var time = 0;
-//   t.addEventListener('touchstart', () => {
-//     time = Date.now();
-//     console.log('start')
-//   });
-//   t.addEventListener('touchend', () => {
+  function slugify(s) {
+    return (s || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[\s-]+/g, '-')
+      .replace(/[^a-z0-9-]/g, '')
+      .replace(/^-+|-+$/g, '')
+      .replace(/[\s-]+/g, '-');
+  }
 
-//     console.log('end %s', Date.now() - time)
-//     if (Date.now() - time > 500) {
-//       console.log('save!');
-//     }
-//   });
-}
+  function Editor(source) {
+    this.events = {};
+    this.source = source;
+    source.classList.add('write');
+    var container = this.container = make('div');
+    container.classList.add('write');
+    var target = this.target = make('pre');
+    target.classList.add('write');
+
+    add(target, container);
+    add(source, container);
+    add(this.container, document.querySelector('main'));
+    on(source, 'input', () => this.update());
+
+    this.update();
+    setTimeout(() => autosize(source), 10); // DOM tick
+  }
+
+  Editor.prototype.commands = {};
+
+  Editor.prototype.update = function () {
+    var html = Prism.highlight(textarea.value, Prism.languages.markdown);
+    this.target.innerHTML = html;
+    this.emit('change', html);
+  };
+
+  Editor.prototype.getValue = function () {
+    return this.source.value;
+  };
+
+  Editor.prototype.setValue = function (v) {
+    this.source.value = v;
+    autosize.update(textarea);
+    this.update();
+  };
+
+  Editor.prototype.on = function (event, callback) {
+    if (!this.events[event]) {
+      this.events[event] = [];
+    }
+
+    this.events[event].push(callback);
+  };
+
+  Editor.prototype.emit = function (event, ...args) {
+    for (const handler of (this.events[event] || [])) {
+      handler.apply(this, args);
+    }
+  };
+
+  Editor.prototype.focus = function () {
+    this.source.focus();
+  };
+
+  var editor = new Editor(textarea);
+
+  editor.on('change', () => {
+    localStorage.setItem('write', editor.getValue());
+  });
+
+  editor.commands.save = save;
+  editor.commands.new = function () {
+    editor.setValue('');
+  };
+
+  editor.focus();
+
+  document.querySelector('#show-actions').onclick = () => {
+    document.querySelector('main').classList.toggle('show-actions');
+  };
+
+  const actions = document.querySelector('#actions');
+  actions.addEventListener('click', function (event) {
+    const node = event.target;
+    if (node.nodeName === 'BUTTON') {
+      event.preventDefault();
+      event.stopPropagation();
+      if (editor.commands[node.dataset.action]) {
+        editor.commands[node.dataset.action]();
+      }
+    }
+  }, false);
+
+  // resets the jump position
+  setTimeout(() => {
+    var ePos = 0;
+    var sPos = 0;
+    if (textarea.setSelectionRange) {
+      textarea.setSelectionRange(sPos, ePos);
+    } else if (textarea.createTextRange) {
+      var range = textarea.createTextRange();
+      range.collapse(true);
+      if (sPos < 0) {
+        sPos = textarea.value.length + sPos;
+      }
+      range.moveEnd('character', ePos);
+      range.moveStart('character', sPos);
+      range.select();
+    }
+    document.body.scrollTop = 0;
+  }, 10);
+})(document, window);
